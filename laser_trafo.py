@@ -12,20 +12,26 @@ import matplotlib.pyplot as plt
 
 from skimage.transform import warp
 from skimage.transform import rescale
+#from scipy import signal # convolve2
+from scipy.ndimage import gaussian_filter
 
-# (1a) draw object, e.g. circle
+###################
+# objects
+###################
+
+# (a) circle
 theta = np.linspace(0, 2*np.pi, 100)
 r = 6
 x = r*np.cos(theta)
 y = r*np.sin(theta)
 
-# (1a-2) discretize object
+# (b) discretize object
 dimg = np.zeros([50,50])
 for i in range(100):
     dimg[int(r*2+x[i]),int(r*2+y[i])]=1
 
 
-# (1b) draw object, e.g. box
+# box // Claude.ai "init numpy array with a box"
 dimg = np.zeros((50, 50))
 dimg[5, 2:20] = 1  # Top edge
 dimg[5:10, 2] = 1  # Bottom edge
@@ -38,7 +44,7 @@ dimg[15:20, 20] = 1  # Bottom edge
 dimg[20, 20:30] = 1  # Left edge
 dimg[15:20, 30] = 1  # Right edge
 
-
+# (c) buildings
 dimg = np.array([
                 [0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0],
                 [0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0],
@@ -95,13 +101,28 @@ dimg = np.array([
                 [0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0],
                 [0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0]
                 ])
+dimg = dimg.astype(np.float64)
 
+# rotate padded_img by _theta [rad]
+def rot(padded_img, _theta, center=25): # warp/rot-center to be half img width / height
+    cos_a = np.cos(_theta)
+    sin_a = np.sin(_theta)
+    R = np.array(
+        [
+            [cos_a, sin_a, -center * (cos_a + sin_a - 1)],
+            [-sin_a, cos_a, -center * (cos_a - sin_a - 1)],
+            [0, 0, 1],
+        ]
+    )
+    rotated = warp(padded_img, R, clip=False) # warp needs 3x3 rot.Matrix as input
+    return rotated
+    
 # Line of Sight (LOS), 2 loops
 def los(dimg): # depthimage
     sum = 0
     for y in range(50):
         for x in range(50):
-            if dimg[y,x]>0:
+            if dimg[y,x]>0.3: # threshold adapted to PSF (s. Gaussian above)
                 dimg[y,x]=2
                 sum = sum+1
                 break
@@ -113,27 +134,61 @@ def los(dimg): # depthimage
                 rng[x] = rng[x]+1
     return rng
 
-theta = np.linspace(-15, 15.0, 360, endpoint=False) #  30 deg
-theta = np.linspace(-60, 60.0, 360, endpoint=False) # 120 deg
-theta = np.linspace(-90, 90.0, 360, endpoint=False) # 180 deg
+# https://stackoverflow.com/questions/29731726/how-to-calculate-a-gaussian-kernel-matrix-efficiently-in-numpy
+def gkern(l=5, sig=1.):
+    """\
+    creates gaussian kernel with side length `l` and a sigma of `sig`
+    """
+    ax = np.linspace(-(l - 1) / 2., (l - 1) / 2., l)
+    gauss = np.exp(-0.5 * np.square(ax) / np.square(sig))
+    kernel = np.outer(gauss, gauss)
+    return kernel / np.sum(kernel)
+
+
+
+# apply PSF
+_sigma = 0.9
+dimg = gaussian_filter(dimg, sigma=_sigma)
+# dbg visualize PSF
+psf = gkern(5,_sigma)
+plt.imshow(psf, interpolation='none')
+plt.show()
+
+
+
+# rotate by 90 deg = observation from above
+###dimg = rot(dimg, np.pi/2, 25)
+#dimg = np.convolve(dimg, psf, mode="full")
+#dimg = signal.convolve2d(dimg, psf)#, mode="full")
+#dimg = signal.correlate2d(dimg, psf)#, mode="full")
+plt.imshow(dimg)
+plt.show()
 
 padded_image = dimg
 
-center = 25
+
+################################################
+# simulated movement
+# this will be an airborn or spaceborn carrier
+# for now we move the object, i.e. rotate
+################################################
+
+th_strt = 0
+###th_strt = 90
+theta = np.linspace(th_strt-15, th_strt+15.0, 360, endpoint=False) #  30 deg
+#theta = np.linspace(th_strt-60, th_strt+60.0, 360, endpoint=False) # 120 deg
+theta = np.linspace(th_strt-90, th_strt+90.0, 360, endpoint=False) # 180 deg
+
+
+
+###################
+# laser transform
+###################
+
 rng = np.zeros([50,360]) # lidar range resolution
 th = np.deg2rad(theta)
 for i in range(1,360):
-    print(th[i])
-    cos_a = np.cos(th[i])
-    sin_a = np.sin(th[i])
-    R = np.array(
-        [
-            [cos_a, sin_a, -center * (cos_a + sin_a - 1)],
-            [-sin_a, cos_a, -center * (cos_a - sin_a - 1)],
-            [0, 0, 1],
-        ]
-    )
-    rotated = warp(padded_image, R, clip=False)
+    rotated = rot(padded_image, th[i])
     rng[:,i] = los(rotated)
 
   
@@ -141,19 +196,6 @@ plt.imshow(rng)
 plt.xlabel("deg")
 plt.xlabel("dst_res")
 plt.show()
-
-
-
-# cos_a = np.cos(np.pi/2)
-# sin_a = np.sin(np.pi/2)
-# R = np.array(
-#     [
-#         [cos_a, sin_a, -center * (cos_a + sin_a - 1)],
-#         [-sin_a, cos_a, -center * (cos_a - sin_a - 1)],
-#         [0, 0, 1],
-#     ]
-# )
-# rng = warp(rng, R, clip=False)
 
 
 
