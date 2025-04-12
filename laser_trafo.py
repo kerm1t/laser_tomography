@@ -12,8 +12,7 @@ import matplotlib.pyplot as plt
 
 from skimage.transform import warp
 from skimage.transform import rescale
-#from scipy import signal # convolve2
-from scipy.ndimage import gaussian_filter
+from scipy import signal # convolve2
 
 ###################
 # objects
@@ -26,26 +25,26 @@ x = r*np.cos(theta)
 y = r*np.sin(theta)
 
 # (b) discretize object
-dimg = np.zeros([50,50])
+o_circle = np.zeros([50,50])
 for i in range(100):
-    dimg[int(r*2+x[i]),int(r*2+y[i])]=1
+    o_circle[int(r*2+x[i]),int(r*2+y[i])]=1
 
 
 # box // Claude.ai "init numpy array with a box"
-dimg = np.zeros((50, 50))
-dimg[5, 2:20] = 1  # Top edge
-dimg[5:10, 2] = 1  # Bottom edge
-dimg[10, 2:20] = 1  # Left edge
-dimg[5:10, 20] = 1  # Right edge
+o_box = np.zeros((50, 50))
+o_box[5, 2:20] = 1  # Top edge
+o_box[5:10, 2] = 1  # Bottom edge
+o_box[10, 2:20] = 1  # Left edge
+o_box[5:10, 20] = 1  # Right edge
 
-dimg = np.zeros((50, 50))
-dimg[15, 20:30] = 1  # Top edge
-dimg[15:20, 20] = 1  # Bottom edge
-dimg[20, 20:30] = 1  # Left edge
-dimg[15:20, 30] = 1  # Right edge
+o_box = np.zeros((50, 50))
+o_box[15, 20:30] = 1  # Top edge
+o_box[15:20, 20] = 1  # Bottom edge
+o_box[20, 20:30] = 1  # Left edge
+o_box[15:20, 30] = 1  # Right edge
 
 # (c) buildings
-dimg = np.array([
+o_bld = np.array([
                 [0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0],
                 [0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0],
                 [0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0],
@@ -101,7 +100,11 @@ dimg = np.array([
                 [0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0],
                 [0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0]
                 ])
+
+dimg = o_bld # set to o_circle, o_box, o_bld
 dimg = dimg.astype(np.float64)
+padded_image = dimg # make sure, image is padded
+
 
 # rotate padded_img by _theta [rad]
 def rot(padded_img, _theta, center=25): # warp/rot-center to be half img width / height
@@ -123,7 +126,7 @@ def los(dimg): # depthimage
     for y in range(50):
         for x in range(50):
             if dimg[y,x]>0.3: # threshold adapted to PSF (s. Gaussian above)
-                dimg[y,x]=2
+                dimg[y,x]=2  # silhouette from LOS
                 sum = sum+1
                 break
     
@@ -131,7 +134,7 @@ def los(dimg): # depthimage
     for x in range(50):
         for y in range(50):
             if dimg[y,x]==2:
-                rng[x] = rng[x]+1
+                rng[x] = rng[x]+1 # signal for range gate
     return rng
 
 # https://stackoverflow.com/questions/29731726/how-to-calculate-a-gaussian-kernel-matrix-efficiently-in-numpy
@@ -146,25 +149,21 @@ def gkern(l=5, sig=1.):
 
 
 
-# apply PSF
+# apply PSF-like kernel
 _sigma = 0.9
-dimg = gaussian_filter(dimg, sigma=_sigma)
-# dbg visualize PSF
 psf = gkern(5,_sigma)
+dimg = signal.convolve2d(dimg, psf, mode="same")
 plt.imshow(psf, interpolation='none')
 plt.show()
 
 
 
 # rotate by 90 deg = observation from above
-###dimg = rot(dimg, np.pi/2, 25)
-#dimg = np.convolve(dimg, psf, mode="full")
-#dimg = signal.convolve2d(dimg, psf)#, mode="full")
-#dimg = signal.correlate2d(dimg, psf)#, mode="full")
-plt.imshow(dimg)
+_rot = 90 # 0,90, ... (deg)
+_rotrad = np.deg2rad(_rot)
+dimg = rot(padded_image, _rotrad, 25)
+plt.imshow(padded_image)
 plt.show()
-
-padded_image = dimg
 
 
 ################################################
@@ -173,8 +172,7 @@ padded_image = dimg
 # for now we move the object, i.e. rotate
 ################################################
 
-th_strt = 0
-###th_strt = 90
+th_strt = _rot
 theta = np.linspace(th_strt-15, th_strt+15.0, 360, endpoint=False) #  30 deg
 #theta = np.linspace(th_strt-60, th_strt+60.0, 360, endpoint=False) # 120 deg
 theta = np.linspace(th_strt-90, th_strt+90.0, 360, endpoint=False) # 180 deg
@@ -206,7 +204,7 @@ plt.show()
 from skimage.transform import iradon
 
 reconstruction_fbp = iradon(rng, theta=theta, filter_name='ramp')
-error = reconstruction_fbp - dimg
+error = reconstruction_fbp - padded_image
 print(f'FBP rms reconstruction error: {np.sqrt(np.mean(error**2)):.3g}')
 
 
@@ -217,7 +215,7 @@ ax1.imshow(reconstruction_fbp, cmap=plt.cm.Greys_r)
 ax1.set_xlabel("y(m)")
 ax1.set_ylabel("x(m)")
 ax2.set_title("Reconstruction error\nFBP")
-ax2.imshow(reconstruction_fbp - dimg, cmap=plt.cm.Greys_r, **imkwargs)
+ax2.imshow(reconstruction_fbp - padded_image, cmap=plt.cm.Greys_r, **imkwargs)
 ax2.set_xlabel("y(m)")
 ax2.set_ylabel("x(m)")
 plt.show()
